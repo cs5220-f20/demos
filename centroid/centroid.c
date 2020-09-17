@@ -49,7 +49,7 @@ int main()
     int n = 1000000;
     double* xy = (double*) calloc(2 * n, sizeof(double));
     double result[2];
-    fill_array(xy, n);
+    fill_array(xy, 2*n);
 
     // Timing first option
     double t = omp_get_wtime();
