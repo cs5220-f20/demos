@@ -1,4 +1,4 @@
-CC=gcc-10
+CC=gcc
 
 assembly: simple0.s simple1.s simple2.s simple3.s
 
