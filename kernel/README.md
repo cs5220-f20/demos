@@ -29,3 +29,12 @@ using OpenMP SIMD pragmas.
     blocking to reduce cache misses (0.4493s).
 7.  `vec3c.x`: Like the previous version, but uses single precision
     rather than double precision (0.2467s).
+
+Note that just the cost of computing the squared distances between each
+pair of points costs `d*n*(n+1)` flops (about equal numbers of adds and
+multiplies).  The most we could possibly hope for is given by the number
+of flops over the peak flop rate, which is just below 0.1 (in double
+precision) on this machine.  Hence, we might hope to get another five-fold
+speedup or so if we continued to fiddle with the code, and managed to
+balance everything perfectly.  Of course, that ignores the time to
+actually evaluate the kernel function!
