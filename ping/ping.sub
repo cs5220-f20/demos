@@ -3,17 +3,17 @@
 #SBATCH -o /home/%u/output/ping_%j.out
 #SBATCH -e /home/%u/output/ping_%j.err
 #SBATCH -n 24
-#SBATCH --nodes=4
-#SBATCH --tasks-per-node=6
+#SBATCH --nodes=2
+#SBATCH --tasks-per-node=12
 #SBATCH --get-user-env
 #SBATCH -t 00:10:00
 #SBATCH --mem-per-cpu=1000
 #SBATCH --partition=cs5220
 
 source /etc/profile.d/modules.sh
-cd $HOME/demos/graphite-ping/
+cd $HOME/demos/ping/
 
 module load openmpi-4.0.0
-mpirun -n 24 ./ping.x 1  > graphite-01.txt
-mpirun -n 24 ./ping.x 11 > graphite-11.txt
-mpirun -n 24 ./ping.x 23 > graphite-23.txt
+mpirun -n 24 --map-by core --bind-to core ./ping.x 1  > graphite-01.txt
+mpirun -n 24 --map-by core --bind-to core ./ping.x 11 > graphite-11.txt
+mpirun -n 24 --map-by core --bind-to core ./ping.x 23 > graphite-23.txt
