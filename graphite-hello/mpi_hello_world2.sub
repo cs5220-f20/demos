@@ -1,7 +1,8 @@
 #!/bin/bash
+
 #SBATCH -J hello_world                              # Job name
-#SBATCH -o /home/dsb253/output/hello_world_%j.out    # Name of stdout output file(%j expands to jobId)
-#SBATCH -e /home/dsb253/output/hello_world_%j.err    # Name of stderr output file(%j expands to jobId)
+#SBATCH -o /home/%u/output/hello_world_%j.out    # Name of stdout output file(%j expands to jobId)
+#SBATCH -e /home/%u/output/hello_world_%j.err    # Name of stderr output file(%j expands to jobId)
 #SBATCH --nodes=7                                   # Total number of nodes requested
 #SBATCH --ntasks=7                                  # Total number of tasks to be configured for
 #SBATCH --tasks-per-node=1                          # Sets number of tasks to run on each node
@@ -10,4 +11,7 @@
 #SBATCH -t 00:10:00                                 # Time limit (hh:mm:ss)
 #SBATCH --mem-per-cpu=1000                          # Memory required per allocated CPU
 #SBATCH --partition=cs5220                        # Which partition/queue it should run on
-/home/dsb253/demos/graphite-hello/mpi_hello_world2.sh # Executable script containing desired commandsi
+
+source /etc/profile.d/modules.sh
+module load openmpi-4.0.0
+mpirun -np 7 $HOME/demos/graphite-hello/mpi-hello.x

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -J hello_world                              # Job name
-#SBATCH -o /home/dsb253/output/hello_world_%j.out    # Name of stdout output file(%j expands to jobId)
-#SBATCH -e /home/dsb253/output/hello_world_%j.err    # Name of stderr output file(%j expands to jobId)
+#SBATCH -o /home/%u/output/hello_world_%j.out    # Name of stdout output file(%j expands to jobId)
+#SBATCH -e /home/%u/output/hello_world_%j.err    # Name of stderr output file(%j expands to jobId)
 #SBATCH --nodes=7                                   # Total number of nodes requested
 #SBATCH --ntasks=7                                  # Total number of tasks to be configured for
 #SBATCH --tasks-per-node=1                          # Sets number of tasks to run on each node
