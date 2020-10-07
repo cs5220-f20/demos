@@ -1,0 +1,17 @@
+#!/bin/sh
+
+# We only need a single processor to print, so ppn=1.
+# A modest timeout of 5 minutes is used, which should be
+# plenty of time for this job to complete.
+
+#PBS -l nodes=1:ppn=1
+#PBS -l walltime=0:05:00
+#PBS -N telephone
+#PBS -j oe
+
+# Enter the directory where this script (and our executable) is.
+cd "$PBS_O_WORKDIR"
+module load intel
+
+# Run the executable.
+mpirun -n 10 ./telephone "Babbling bubbles" 
