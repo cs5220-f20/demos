@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>The 1D wave equation (C edition)</title>
+  <style type="text/css">
+      code{white-space: pre-wrap;}
+      span.smallcaps{font-variant: small-caps;}
+      span.underline{text-decoration: underline;}
+      div.column{display: inline-block; vertical-align: top; width: 50%;}
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.2/MathJax.js?config=TeX-AMS_CHTML-full" type="text/javascript"></script>
+  <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+</head>
+<body>
+<header>
+<h1 class="title">The 1D wave equation (C edition)</h1>
+</header>
+<p>This is another serial implementation of the wave stepper code. The purpose is to give some tips about how to organize a time-stepper code like this (e.g. using a limited history buffer for time steps), and also to show off how the argument processing works.</p>
+<p>This is also an opportunity for me to show of my <a href="https://github.com/dbindel/ldoc"><code>ldoc</code></a> documentation generator.</p>
+<h2 id="argument-processing">Argument processing</h2>
+<p>The <a href="https://en.wikipedia.org/wiki/Getopt"><code>getopt</code></a> command is a parser for Unix-style command line flags. It’s a bit clunky and awkward, but still worth knowing about. Even a code as simple as the 1D wave equation solver has several possible parameters: the number of grid points, the wave speed, the time step, the number of time steps, and the name of the output file, in this case.</p>
+<pre><code>int parse_args(int argc, char** argv,
+               int* n, double* c, double* dt, int* nsteps, char** ofname)
+{
+    int opt;
+    int err_flag = 0;
+    const char* help_string =
+        &quot;Usage: wave_demo [-h] [-n nmesh] [-c speed] [-t dt] [-s nsteps] [-o fname]\n&quot;
+        &quot;\n&quot;
+        &quot;  h: Print this message\n&quot;
+        &quot;  n: Set the mesh size (default %d)\n&quot;
+        &quot;  c: Set the speed of sound (default %g)\n&quot;
+        &quot;  t: Set the time step (default %g)\n&quot;
+        &quot;  s: Set the number of steps (default %d)\n&quot;
+        &quot;  o: Output file name (default none)\n&quot;;
+
+    while ((opt = getopt(argc, argv, &quot;hn:c:t:s:o:&quot;)) != -1) {
+        switch (opt) {
+            case &#39;h&#39;:
+                fprintf(stderr, help_string, *n, *c, *dt, *nsteps, *ofname);
+                err_flag = 1;
+                break;
+            case &#39;n&#39;:
+                *n = atoi(optarg);
+                if (*n &lt; 3) {
+                    fprintf(stderr, &quot;Error: Need at least three mesh points\n&quot;);
+                    err_flag = -1;
+                }
+                break;
+            case &#39;c&#39;:
+                *c = atof(optarg);
+                break;
+            case &#39;t&#39;:
+                if (*dt &lt;= 0.0) {
+                    fprintf(stderr, &quot;Error: Time step must be positive\n&quot;);
+                    err_flag = 1;
+                }
+                *dt = atof(optarg);
+                break;
+            case &#39;s&#39;:
+                *nsteps = atoi(optarg);
+                break;
+            case &#39;o&#39;:
+                *ofname = strdup(optarg);
+                break;
+            case &#39;?&#39;:
+                fprintf(stderr, &quot;Unknown option\n&quot;);
+                err_flag = -1;
+                break;
+        }
+    }
+    return err_flag;
+}</code></pre>
+<h2 id="the-time-stepper">The time stepper</h2>
+<p>The <code>time_step</code> command takes one time step of a standard finite difference solver for the wave equation <span class="math display">\[
+  u_{tt} = c^2 u_{xx}
+\]</span> on a 1D domain with provided Dirichlet data. We approximate both second derivatives by finite differences, i.e. <span class="math display">\[
+  u_{tt}(x,t) \approx
+    \frac{u(x,t-\Delta t) - 2 u(x,t) + u(x,t+\Delta t)}{(\Delta t)^2}
+\]</span> and similarly for the second derivative in space. Plugging this into the wave equation and rearranging terms gives us the update formula <span class="math display">\[
+  u(x, t + \Delta t) =
+    2 u(x,t) - u(x,t-\Delta t) +
+    \left( c \frac{\Delta t}{\Delta x} \right)^2
+    \left( u(x+\Delta x, t) - 2 u(x,t) + u(x-\Delta x, t) \right)
+\]</span> We let <code>u0[i]</code> and <code>u1[i]</code> denote the values of <span class="math inline">\(u(x_i,t-\Delta t)\)</span> and <span class="math inline">\(u(x_i, t)\)</span> for a mesh of points <span class="math inline">\(x_i\)</span> with spacing <span class="math inline">\(\Delta x\)</span>, and write to the output <code>u2</code> which contains <span class="math inline">\(u(x, t + \Delta t)\)</span>.</p>
+<p>The wave equation requires boundary conditions as well as initial data, and this time stepper does not explicitly handle boundary conditions. Instead, the boundary conditions need to be handled by a separate routine that updates a layer of <code>b</code> “ghost cells” at each end of the computational mesh. This can be done by filling in fixed values (for Dirichlet boundary conditions), copying endpoint values (for homogeneous Neumann conditions), or transferring data from a neighboring processor (for the case where the time stepper is being used inside of another code).</p>
+<pre><code>void time_step(int n,             // Total number of grid points
+               int b,             // Number of boundary cells at each end
+               const double* restrict u0,  // Data two time steps ago
+               const double* restrict u1,  // Data one time step ago
+               double* restrict u2,        // Data to be computed
+               double c,          // Wave speed
+               double dx,         // Spatial step size
+               double dt)         // Time step size
+{
+    double C = c*(dt/dx);
+    double C2 = C*C;
+    for (int i = b; i &lt; n-b; ++i)
+        u2[i] = 2*u1[i]-u0[i] + C2*(u1[i-1]-2*u1[i]+u1[i+1]);
+}</code></pre>
+<p>Of course, we generally don’t want to take exactly one time step: we want to take many time steps. We only need to keep three consecutive time steps. We indicate the most recent completed step with <code>i0</code>; the step before is at <code>i0-1</code> (mod 3) and the step to be computed is at <code>i0+1</code> (mod 3). We’ll return the index (mod 3) of the last time step computed.</p>
+<pre><code>int time_steps(int n, int b, double* us, int i0, int nsteps,
+               double c, double dx, double dt)
+{
+    for (int j = 0; j &lt; nsteps; ++j) {
+        double* u0 = us + ((i0+2+j)%3)*n;
+        double* u1 = us + ((i0+0+j)%3)*n;
+        double* u2 = us + ((i0+1+j)%3)*n;
+        time_step(n, 1, u0, u1, u2, c, dx, dt);
+    }
+    return (i0+nsteps)%3;
+}</code></pre>
+<h2 id="initial-conditions">Initial conditions</h2>
+<p>If we want a general purpose code, it often makes sense to separate out the initial conditions from everything else. Certainly you want to make it easy to swap out one set of initial conditions for another.</p>
+<pre><code>void initial_conditions(int n, double* u0, double* u1,
+                        double c, double dx, double dt)
+{
+    for (int i = 1; i &lt; n-1; ++i) {
+        double x = i*dx;
+        u0[i] = exp(-25*(x-0.5)*(x-0.5));
+        u1[i] = exp(-25*(x-0.5-c*dt)*(x-0.5-c*dt));
+    }
+}</code></pre>
+<h2 id="printing-the-state">Printing the state</h2>
+<p>We will use a simple text file format for the simulation state. That makes it easier to read into a viewer like the Python script that we wrote for the Python version of this code. A binary format (or a compressed binary format) might be worth considering if we are planning to output more data. One might also consider downsampling the output (e.g. printing only every mth mesh point) if the purpose of the output is visualization rather than detailed diagnosis or restarting of a simulation.</p>
+<pre><code>void print_mesh(FILE* fp, int n, double* u)
+{
+    for (int i = 0; i &lt; n; ++i)
+        fprintf(fp, &quot;%g\n&quot;, u[i]);
+}</code></pre>
+<h2 id="the-main-event">The <code>main</code> event</h2>
+<pre><code>int main(int argc, char** argv)
+{
+    // Set defaults and parse arguments
+    int n = 1000;
+    double c = 1.0;
+    double dt = 5e-4;
+    int nsteps = 3600;
+    char* fname = NULL;
+    int flag = parse_args(argc, argv, &amp;n, &amp;c, &amp;dt, &amp;nsteps, &amp;fname);
+    if (flag != 0)
+        return flag;
+
+    // Compute space step and check CFL
+    double dx = 1.0/(n-1);
+    double C = c*dt/dx;
+    if (C &gt;= 1.0) {
+        printf(&quot;CFL constant is %g (should be &lt; 1 for stability)\n&quot;, C);
+        return -1;
+    }
+
+    // Setting up the storage space for the time steps
+    double* us = (double*) malloc(3 * n * sizeof(double));
+    memset(us, 0, 3 * n * sizeof(double));
+
+    // Initialize the problem and run the time stepper
+    initial_conditions(n, us+0*n, us+1*n, c, dx, dt);
+    int last_idx = time_steps(n, 1, us, 1, nsteps, c, dx, dt);
+
+    // Write the final output
+    if (fname) {
+        FILE* fp = fopen(fname, &quot;w&quot;);
+        print_mesh(fp, n, us+n*last_idx);
+        fclose(fp);
+    }
+
+    // Clean up and return
+    free(us);
+    return 0;
+}</code></pre>
+</body>
+</html>
