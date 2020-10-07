@@ -19,7 +19,7 @@ int parse_args(int argc, char** argv, int* n, double* c, double* dt, int* nsteps
         "  c: Set the speed of sound (default %g)\n"
         "  t: Set the time step (default %g)\n"
         "  s: Set the number of steps (default %d)\n"
-        "  o: Output file name (default '%s')\n";
+        "  o: Output file name (default none)\n";
 
     while ((opt = getopt(argc, argv, "hn:c:t:s:o:")) != -1) {
         switch (opt) {
@@ -62,6 +62,8 @@ int parse_args(int argc, char** argv, int* n, double* c, double* dt, int* nsteps
 
 void print_mesh(FILE* fp, int n, double* u)
 {
+    if (!fp)
+        return;
     for (int i = 0; i < n; ++i)
         fprintf(fp, "%g\n", u[i]);
 }
@@ -74,7 +76,7 @@ int main(int argc, char** argv)
     double c = 1.0;
     double dt = 5e-4;
     int nsteps = 3600;
-    char* fname = "steps.txt";
+    char* fname = NULL;
     int flag = parse_args(argc, argv, &n, &c, &dt, &nsteps, &fname);
     if (flag != 0)
         return flag;
@@ -110,9 +112,11 @@ int main(int argc, char** argv)
     }
     
     // Write the final output
-    FILE* fp = fopen(fname, "w");
-    print_mesh(fp, n, us);
-    fclose(fp);
+    if (fname) {
+        FILE* fp = fopen(fname, "w");
+        print_mesh(fp, n, us);
+        fclose(fp);
+    }
     
     free(us);
     return 0;
