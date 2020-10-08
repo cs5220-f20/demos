@@ -1,5 +1,9 @@
+CC=gcc
+CFLAGS=-O3 -ffast-math -march=native 
+LIBS=-lm
+
 wave_demo.x: wave_demo.c
-	gcc -O3 -ffast-math wave_demo.c -o wave_demo.x
+	$(CC) $(CFLAGS) wave_demo.c -o wave_demo.x $(LIBS)
 
 %.md: %.c
 	ldoc wave_demo.c -o wave_demo.md

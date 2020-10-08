@@ -9,7 +9,7 @@
 #include <omp.h>
 #else
 #include <time.h>
-inline double omp_get_wtime() { return 1.0 * clock() / CLOCKS_PER_SEC; }
+inline double omp_get_wtime() { return (double) clock() / CLOCKS_PER_SEC; }
 #endif
 
 
