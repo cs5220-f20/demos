@@ -149,7 +149,7 @@ int time_steps(int n, int b, double* us, int i0, int nsteps,
         double* u0 = us + ((i0+2+j)%3)*n;
         double* u1 = us + ((i0+0+j)%3)*n;
         double* u2 = us + ((i0+1+j)%3)*n;
-        time_step(n, 1, u0, u1, u2, c, dx, dt);
+        time_step(n, b, u0, u1, u2, c, dx, dt);
     }
     return (i0+nsteps)%3;
 }
