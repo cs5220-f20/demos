@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>The 1D wave equation (C edition)</title>
+  <style type="text/css">
+      code{white-space: pre-wrap;}
+      span.smallcaps{font-variant: small-caps;}
+      span.underline{text-decoration: underline;}
+      div.column{display: inline-block; vertical-align: top; width: 50%;}
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.2/MathJax.js?config=TeX-AMS_CHTML-full" type="text/javascript"></script>
+  <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+</head>
+<body>
+<header>
+<h1 class="title">The 1D wave equation (C edition)</h1>
+</header>
+<p>This is another serial implementation of the wave stepper code. Relative to the earlier C version, this one is tuned a bit to try to get better (serial) performance.</p>
+<p>This is also an opportunity for me to show of my <a href="https://github.com/dbindel/ldoc"><code>ldoc</code></a> documentation generator.</p>
+<h2 id="argument-processing">Argument processing</h2>
+<p>The <a href="https://en.wikipedia.org/wiki/Getopt"><code>getopt</code></a> command is a parser for Unix-style command line flags. It’s a bit clunky and awkward, but still worth knowing about. Even a code as simple as the 1D wave equation solver has several possible parameters: the number of grid points, the wave speed, the time step, the number of time steps, and the name of the output file, in this case.</p>
+<pre><code>int parse_args(int argc, char** argv,
+               int* n, float* c, float* dt, int* nsteps, char** ofname)
+{
+    int opt;
+    int err_flag = 0;
+    const char* help_string =
+        &quot;Usage: wave_demo [-h] [-n nmesh] [-c speed] [-t dt] [-s nsteps] [-o fname]\n&quot;
+        &quot;\n&quot;
+        &quot;  h: Print this message\n&quot;
+        &quot;  n: Set the mesh size (default %d)\n&quot;
+        &quot;  c: Set the speed of sound (default %g)\n&quot;
+        &quot;  t: Set the time step (default %g)\n&quot;
+        &quot;  s: Set the number of steps (default %d)\n&quot;
+        &quot;  o: Output file name (default none)\n&quot;;
+
+    while ((opt = getopt(argc, argv, &quot;hn:c:t:s:o:&quot;)) != -1) {
+        switch (opt) {
+            case &#39;h&#39;:
+                fprintf(stderr, help_string, *n, *c, *dt, *nsteps, *ofname);
+                err_flag = 1;
+                break;
+            case &#39;n&#39;:
+                *n = atoi(optarg);
+                if (*n &lt; 3) {
+                    fprintf(stderr, &quot;Error: Need at least three mesh points\n&quot;);
+                    err_flag = -1;
+                }
+                break;
+            case &#39;c&#39;:
+                *c = atof(optarg);
+                break;
+            case &#39;t&#39;:
+                if (*dt &lt;= 0.0) {
+                    fprintf(stderr, &quot;Error: Time step must be positive\n&quot;);
+                    err_flag = 1;
+                }
+                *dt = atof(optarg);
+                break;
+            case &#39;s&#39;:
+                *nsteps = atoi(optarg);
+                break;
+            case &#39;o&#39;:
+                *ofname = strdup(optarg);
+                break;
+            case &#39;?&#39;:
+                fprintf(stderr, &quot;Unknown option\n&quot;);
+                err_flag = -1;
+                break;
+        }
+    }
+    return err_flag;
+}</code></pre>
+<h2 id="the-time-stepper">The time stepper</h2>
+<p>The <code>time_step</code> command takes one time step of a standard finite difference solver for the wave equation <span class="math display">\[
+  u_{tt} = c^2 u_{xx}
+\]</span> on a 1D domain with provided Dirichlet data. We approximate both second derivatives by finite differences, i.e. <span class="math display">\[
+  u_{tt}(x,t) \approx
+    \frac{u(x,t-\Delta t) - 2 u(x,t) + u(x,t+\Delta t)}{(\Delta t)^2}
+\]</span> and similarly for the second derivative in space. Plugging this into the wave equation and rearranging terms gives us the update formula <span class="math display">\[
+  u(x, t + \Delta t) =
+    2 u(x,t) - u(x,t-\Delta t) +
+    \left( c \frac{\Delta t}{\Delta x} \right)^2
+    \left( u(x+\Delta x, t) - 2 u(x,t) + u(x-\Delta x, t) \right)
+\]</span> We let <code>u0[i]</code> and <code>u1[i]</code> denote the values of <span class="math inline">\(u(x_i,t-\Delta t)\)</span> and <span class="math inline">\(u(x_i, t)\)</span> for a mesh of points <span class="math inline">\(x_i\)</span> with spacing <span class="math inline">\(\Delta x\)</span>, and write to the output <code>u2</code> which contains <span class="math inline">\(u(x, t + \Delta t)\)</span>.</p>
+<pre><code>void time_step(int n,             // Total grid points to update
+               const float* restrict u0,  // Data two time steps ago
+               const float* restrict u1,  // Data one time step ago
+               float* restrict u2,        // Data to be computed
+               float C2)          // Squared nondim wave speed
+{
+    float C1 = 2.0f-2.0f*C2;
+    for (int i = 0; i &lt; n; ++i)
+        u2[i] = C1*u1[i]-u0[i] + C2*(u1[i-1]+u1[i+1]);
+}</code></pre>
+<p>Of course, we generally don’t want to take exactly one time step: we want to take many time steps. We only need to keep three consecutive time steps. We indicate the most recent completed step with <code>i0</code>; the step before is at <code>i0-1</code> (mod 3) and the step to be computed is at <code>i0+1</code> (mod 3). We’ll return the index (mod 3) of the last time step computed.</p>
+<p>We distinguish between the total number of cells that we are keeping at each step (<code>ntotal</code>) and the number of cells that we are updating (<code>nupdate</code>). In general, something is wrong if the ntotal &lt; nupdate+2. int time_steps(int ntotal, // Total number of cells (including ghosts) int nupdate, // Number of cells to update float* us, // Start of cells to be updated int i0, // Index of most recent completed step int nsteps, // Number of steps to advance float C2) // Squared wave speed { assert(ntotal &gt;= nupdate+2); for (int j = 0; j &lt; nsteps; ++j) { float* u0 = us + ((i0+2+j)%3)<em>ntotal; float</em> u1 = us + ((i0+0+j)%3)<em>ntotal; float</em> u2 = us + ((i0+1+j)%3)*ntotal; time_step(nupdate, u0, u1, u2, C2); } return (i0+nsteps)%3; }</p>
+<h2 id="initial-conditions">Initial conditions</h2>
+<p>If we want a general purpose code, it often makes sense to separate out the initial conditions from everything else. Certainly you want to make it easy to swap out one set of initial conditions for another.</p>
+<pre><code>void initial_conditions(int n, float* u0, float* u1,
+                        float c, float dx, float dt)
+{
+    for (int i = 1; i &lt; n-1; ++i) {
+        float x = i*dx;
+        u0[i] = exp(-25*(x-0.5)*(x-0.5));
+        u1[i] = exp(-25*(x-0.5-c*dt)*(x-0.5-c*dt));
+    }
+}</code></pre>
+<h2 id="printing-the-state">Printing the state</h2>
+<p>We will use a simple text file format for the simulation state. That makes it easier to read into a viewer like the Python script that we wrote for the Python version of this code. A binary format (or a compressed binary format) might be worth considering if we are planning to output more data. One might also consider downsampling the output (e.g. printing only every mth mesh point) if the purpose of the output is visualization rather than detailed diagnosis or restarting of a simulation.</p>
+<pre><code>void print_mesh(FILE* fp, int n, float* u)
+{
+    for (int i = 0; i &lt; n; ++i)
+        fprintf(fp, &quot;%g\n&quot;, u[i]);
+}</code></pre>
+<h2 id="subdomain-partitioning">Subdomain partitioning</h2>
+<p>We break the interior of the domain into disjoint subdomains, each with index sets <code>own_start &lt;= i &lt; own_end</code>. To advance these owned mesh points by B steps, we need to look at the range <code>sub_start &lt;= i &lt; sub_end</code> where <code>sub_start = min(own_start-B, 0)</code> and <code>sub_end = max(own_end+B, n)</code>.</p>
+<p>We set the default batch size to 40, and the subdomain interior sizes to 560.</p>
+<pre><code>#define BATCH 40
+#define NS_INNER 1200
+#define NS_TOTAL 1280
+
+inline
+int sub_start(int own_start)
+{
+    return (own_start &lt; BATCH) ? 0 : own_start-BATCH;
+}
+
+inline
+int sub_end(int own_end, int n)
+{
+    return (own_end+BATCH &gt; n) ? n : own_end+BATCH;
+}</code></pre>
+<p>The <code>sub_copyin</code> routine moves the range from <code>sub_start</code> to <code>sub_end</code> into a local copy. The <code>sub_copyout</code> routine moves the range corresponding to <code>own_start</code> to <code>own_end</code> (starting at offset <code>own_start-sub_start</code>) from the local array back into the global array.</p>
+<pre><code>void sub_copyin(float* restrict ulocal,
+                float* restrict uglobal,
+                int own_start, int own_end, int n)
+{
+    int dstart = sub_start(own_start);
+    int dend = sub_end(own_end, n);
+    for (int j = 0; j &lt; 3; ++j)
+        memcpy(ulocal + j*NS_TOTAL,
+               uglobal + dstart + j*n,
+               (dend - dstart) * sizeof(float));
+}
+
+void sub_copyout(float* restrict ulocal,
+                 float* restrict uglobal,
+                 int own_start, int own_end, int n)
+{
+    int dstart = sub_start(own_start);
+    int dend = sub_end(own_end, n);
+    for (int j = 0; j &lt; 3; ++j)
+        memcpy(uglobal + own_start + j*n,
+               ulocal + own_start - dstart + j*NS_TOTAL,
+               (own_end - own_start) * sizeof(float));
+}</code></pre>
+<p>The <code>sub_steps</code> routine copies data into a local buffer, then advances that buffer by the given number of steps. int sub_steps(int own_start, // Start of owned cell range int own_end, // End of owned cell range float* uglobal, // Global storage int n, // Total number of mesh cells float* ulocal, // Start of subdomain storage int i0, // Index of most recent completed step int nsteps, // Number of steps to advance float C2) // Squared wave speed { int dstart = sub_start(own_start); int dend = sub_end(own_end, n); sub_copyin(ulocal, uglobal, own_start, own_end, n); return time_steps(NS_TOTAL, dend-dstart-2, ulocal+1, i0%3, nsteps, C2); }</p>
+<p>The partitioner cuts the domain into pieces of size at most <code>NS_INNER</code>; partition <code>j</code> is indices <code>offsets[j] &lt;= i &lt; offsets[j+1]</code>. We return the total number of partitions in the output argument <code>npart</code>; the offsets array has length <code>npart+1</code>. int* alloc_partition(int n, int* npart) { int np = (n-2 + NS_INNER-1)/NS_INNER; int* offsets = (int<em>) malloc((np+1) </em> sizeof(int)); for (int i = 0; i &lt;= np; ++i) { long r = i<em>(n-2); offsets[i] = 1 + (int) (r/np); } </em>npart = np; return offsets; }</p>
+<h2 id="the-main-event">The <code>main</code> event</h2>
+<pre><code>int main(int argc, char** argv)
+{
+    // Set defaults and parse arguments
+    int n = 1000;
+    float c = 1.0;
+    float dt = 5e-4;
+    int nsteps = 3600;
+    char* fname = NULL;
+    int flag = parse_args(argc, argv, &amp;n, &amp;c, &amp;dt, &amp;nsteps, &amp;fname);
+    if (flag != 0)
+        return flag;
+
+    // Compute space step and check CFL
+    float dx = 1.0/(n-1);
+    float C = c*dt/dx;
+    float C2 = C*C;
+    if (C &gt;= 1.0) {
+        printf(&quot;CFL constant is %g (should be &lt; 1 for stability)\n&quot;, C);
+        return -1;
+    }
+
+    // Setting up the storage space and initial conditions
+    float* us = (float*) malloc(3 * n * sizeof(float));
+    memset(us, 0, 3 * n * sizeof(float));
+    initial_conditions(n, us+0*n, us+1*n, c, dx, dt);
+
+    // Partition the domain
+    int npart;
+    int* offsets = alloc_partition(n, &amp;npart);
+
+    // Set up storage for subdomains
+    float* subdomains = (float*) malloc(6 * NS_TOTAL * sizeof(float));
+    memset(subdomains, 0, 6 * NS_TOTAL * sizeof(float));
+
+    // Run the time stepper in batches of at most B steps
+    double t0 = omp_get_wtime();
+    int last_idx = (nsteps+1)%3;
+    for (int j = 0; j &lt; nsteps; j += BATCH) {
+        int bsteps = (j+BATCH &gt; nsteps) ? nsteps-j : BATCH;
+        if (npart == 1)
+            time_steps(n, n-2, us+1, (j+1)%3, bsteps, C2);
+        else {
+            for (int i = 0; i &lt;= npart; ++i) {
+                if (i &lt; npart)
+                    sub_steps(offsets[i], offsets[i+1], us, n,
+                              subdomains + (i%2) * 3 * NS_TOTAL,
+                              (j+1)%3, bsteps, C2);
+                if (i &gt; 0)
+                    sub_copyout(subdomains + ((i+1)%2) * 3 * NS_TOTAL,
+                                us, offsets[i-1], offsets[i], n);
+            }
+        }
+    }
+
+    double tfinal = omp_get_wtime();
+    double flops = 5.0 * nsteps * n;
+    printf(&quot;Elapsed time: %g\n&quot;, tfinal-t0);
+    printf(&quot;Effective Gflop/s: %g\n&quot;, flops/(tfinal-t0)/1e9);
+
+    // Write the final output
+    if (fname) {
+        FILE* fp = fopen(fname, &quot;w&quot;);
+        print_mesh(fp, n, us+n*last_idx);
+        fclose(fp);
+    }
+
+    // Clean up and return
+    free(subdomains);
+    free(offsets);
+    free(us);
+    return 0;
+}</code></pre>
+</body>
+</html>
