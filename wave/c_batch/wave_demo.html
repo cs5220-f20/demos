@@ -99,7 +99,23 @@
         u2[i] = C1*u1[i]-u0[i] + C2*(u1[i-1]+u1[i+1]);
 }</code></pre>
 <p>Of course, we generally don’t want to take exactly one time step: we want to take many time steps. We only need to keep three consecutive time steps. We indicate the most recent completed step with <code>i0</code>; the step before is at <code>i0-1</code> (mod 3) and the step to be computed is at <code>i0+1</code> (mod 3). We’ll return the index (mod 3) of the last time step computed.</p>
-<p>We distinguish between the total number of cells that we are keeping at each step (<code>ntotal</code>) and the number of cells that we are updating (<code>nupdate</code>). In general, something is wrong if the ntotal &lt; nupdate+2. int time_steps(int ntotal, // Total number of cells (including ghosts) int nupdate, // Number of cells to update float* us, // Start of cells to be updated int i0, // Index of most recent completed step int nsteps, // Number of steps to advance float C2) // Squared wave speed { assert(ntotal &gt;= nupdate+2); for (int j = 0; j &lt; nsteps; ++j) { float* u0 = us + ((i0+2+j)%3)<em>ntotal; float</em> u1 = us + ((i0+0+j)%3)<em>ntotal; float</em> u2 = us + ((i0+1+j)%3)*ntotal; time_step(nupdate, u0, u1, u2, C2); } return (i0+nsteps)%3; }</p>
+<p>We distinguish between the total number of cells that we are keeping at each step (<code>ntotal</code>) and the number of cells that we are updating (<code>nupdate</code>). In general, something is wrong if the ntotal &lt; nupdate+2.</p>
+<pre><code>int time_steps(int ntotal,   // Total number of cells (including ghosts)
+               int nupdate,  // Number of cells to update
+               float* us,   // Start of cells to be updated
+               int i0,       // Index of most recent completed step
+               int nsteps,   // Number of steps to advance
+               float C2)    // Squared wave speed
+{
+    assert(ntotal &gt;= nupdate+2);
+    for (int j = 0; j &lt; nsteps; ++j) {
+        float* u0 = us + ((i0+2+j)%3)*ntotal;
+        float* u1 = us + ((i0+0+j)%3)*ntotal;
+        float* u2 = us + ((i0+1+j)%3)*ntotal;
+        time_step(nupdate, u0, u1, u2, C2);
+    }
+    return (i0+nsteps)%3;
+}</code></pre>
 <h2 id="initial-conditions">Initial conditions</h2>
 <p>If we want a general purpose code, it often makes sense to separate out the initial conditions from everything else. Certainly you want to make it easy to swap out one set of initial conditions for another.</p>
 <pre><code>void initial_conditions(int n, float* u0, float* u1,
@@ -120,7 +136,6 @@
 }</code></pre>
 <h2 id="subdomain-partitioning">Subdomain partitioning</h2>
 <p>We break the interior of the domain into disjoint subdomains, each with index sets <code>own_start &lt;= i &lt; own_end</code>. To advance these owned mesh points by B steps, we need to look at the range <code>sub_start &lt;= i &lt; sub_end</code> where <code>sub_start = min(own_start-B, 0)</code> and <code>sub_end = max(own_end+B, n)</code>.</p>
-<p>We set the default batch size to 40, and the subdomain interior sizes to 560.</p>
 <pre><code>#define BATCH 40
 #define NS_INNER 1200
 #define NS_TOTAL 1280
@@ -160,8 +175,33 @@ void sub_copyout(float* restrict ulocal,
                ulocal + own_start - dstart + j*NS_TOTAL,
                (own_end - own_start) * sizeof(float));
 }</code></pre>
-<p>The <code>sub_steps</code> routine copies data into a local buffer, then advances that buffer by the given number of steps. int sub_steps(int own_start, // Start of owned cell range int own_end, // End of owned cell range float* uglobal, // Global storage int n, // Total number of mesh cells float* ulocal, // Start of subdomain storage int i0, // Index of most recent completed step int nsteps, // Number of steps to advance float C2) // Squared wave speed { int dstart = sub_start(own_start); int dend = sub_end(own_end, n); sub_copyin(ulocal, uglobal, own_start, own_end, n); return time_steps(NS_TOTAL, dend-dstart-2, ulocal+1, i0%3, nsteps, C2); }</p>
-<p>The partitioner cuts the domain into pieces of size at most <code>NS_INNER</code>; partition <code>j</code> is indices <code>offsets[j] &lt;= i &lt; offsets[j+1]</code>. We return the total number of partitions in the output argument <code>npart</code>; the offsets array has length <code>npart+1</code>. int* alloc_partition(int n, int* npart) { int np = (n-2 + NS_INNER-1)/NS_INNER; int* offsets = (int<em>) malloc((np+1) </em> sizeof(int)); for (int i = 0; i &lt;= np; ++i) { long r = i<em>(n-2); offsets[i] = 1 + (int) (r/np); } </em>npart = np; return offsets; }</p>
+<p>The <code>sub_steps</code> routine copies data into a local buffer, then advances that buffer by the given number of steps.</p>
+<pre><code>int sub_steps(int own_start,   // Start of owned cell range
+              int own_end,     // End of owned cell range
+              float* uglobal, // Global storage
+              int n,           // Total number of mesh cells
+              float* ulocal,  // Start of subdomain storage
+              int i0,          // Index of most recent completed step
+              int nsteps,      // Number of steps to advance
+              float C2)       // Squared wave speed
+{
+    int dstart = sub_start(own_start);
+    int dend = sub_end(own_end, n);
+    sub_copyin(ulocal, uglobal, own_start, own_end, n);
+    return time_steps(NS_TOTAL, dend-dstart-2, ulocal+1, i0%3, nsteps, C2);
+}</code></pre>
+<p>The partitioner cuts the domain into pieces of size at most <code>NS_INNER</code>; partition <code>j</code> is indices <code>offsets[j] &lt;= i &lt; offsets[j+1]</code>. We return the total number of partitions in the output argument <code>npart</code>; the offsets array has length <code>npart+1</code>.</p>
+<pre><code>int* alloc_partition(int n, int* npart)
+{
+    int np = (n-2 + NS_INNER-1)/NS_INNER;
+    int* offsets = (int*) malloc((np+1) * sizeof(int));
+    for (int i = 0; i &lt;= np; ++i) {
+        long r = i*(n-2);
+        offsets[i] = 1 + (int) (r/np);
+    }
+    *npart = np;
+    return offsets;
+}</code></pre>
 <h2 id="the-main-event">The <code>main</code> event</h2>
 <pre><code>int main(int argc, char** argv)
 {

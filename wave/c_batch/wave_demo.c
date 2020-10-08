@@ -4,7 +4,14 @@
 #include <math.h>
 #include <unistd.h>
 #include <assert.h>
+
+#if defined(_OPENMP)
 #include <omp.h>
+#else
+#include <time.h>
+inline double omp_get_wtime() { return 1.0 * clock() / CLOCKS_PER_SEC; }
+#endif
+
 
 //ldoc on
 /**
@@ -131,6 +138,7 @@ void time_step(int n,             // Total grid points to update
  * We distinguish between the total number of cells that we are keeping
  * at each step (`ntotal`) and the number of cells that we are updating
  * (`nupdate`).  In general, something is wrong if the ntotal < nupdate+2.
+ *
  */
 int time_steps(int ntotal,   // Total number of cells (including ghosts)
                int nupdate,  // Number of cells to update
@@ -249,6 +257,7 @@ void sub_copyout(float* restrict ulocal,
 /**
  * The `sub_steps` routine copies data into a local buffer, then advances
  * that buffer by the given number of steps.
+ *
  */
 int sub_steps(int own_start,   // Start of owned cell range
               int own_end,     // End of owned cell range
@@ -270,6 +279,7 @@ int sub_steps(int own_start,   // Start of owned cell range
  * partition `j` is indices `offsets[j] <= i < offsets[j+1]`.  We return
  * the total number of partitions in the output argument `npart`; the
  * offsets array has length `npart+1`.
+ *
  */
 int* alloc_partition(int n, int* npart)
 {

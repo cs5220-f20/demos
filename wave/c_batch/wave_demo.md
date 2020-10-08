@@ -117,6 +117,7 @@ of the last time step computed.
 We distinguish between the total number of cells that we are keeping
 at each step (`ntotal`) and the number of cells that we are updating
 (`nupdate`).  In general, something is wrong if the ntotal < nupdate+2.
+
     int time_steps(int ntotal,   // Total number of cells (including ghosts)
                    int nupdate,  // Number of cells to update
                    float* us,   // Start of cells to be updated
@@ -178,9 +179,6 @@ mesh points by B steps, we need to look at the range
 `sub_start = min(own_start-B, 0)` and
 `sub_end = max(own_end+B, n)`.
 
-We set the default batch size to 40, and the subdomain interior sizes
-to 560.
-
     #define BATCH 40
     #define NS_INNER 1200
     #define NS_TOTAL 1280
@@ -228,6 +226,7 @@ from the local array back into the global array.
     
 The `sub_steps` routine copies data into a local buffer, then advances
 that buffer by the given number of steps.
+
     int sub_steps(int own_start,   // Start of owned cell range
                   int own_end,     // End of owned cell range
                   float* uglobal, // Global storage
@@ -247,6 +246,7 @@ The partitioner cuts the domain into pieces of size at most `NS_INNER`;
 partition `j` is indices `offsets[j] <= i < offsets[j+1]`.  We return
 the total number of partitions in the output argument `npart`; the
 offsets array has length `npart+1`.
+
     int* alloc_partition(int n, int* npart)
     {
         int np = (n-2 + NS_INNER-1)/NS_INNER;
