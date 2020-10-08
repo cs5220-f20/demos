@@ -1,4 +1,4 @@
-MPICC=mpiicc
+MPICC=mpicc
 
 .PHONY: all clean
 
