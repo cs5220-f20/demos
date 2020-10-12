@@ -145,7 +145,6 @@ void omp_mc_pi(int ntrials)
  * critical section!  So finer-grain control might make sense in that case.
  *
  */
-
 typedef struct link_t {
     struct link_t* next;
     int data;
@@ -191,10 +190,6 @@ void list_test()
     free_list(l);
 }
 
-/**
- * ## Linked list and atomic capture
- *
- */
 void list_push2(link_t** l, int data)
 {
     link_t* link = (link_t*) malloc(sizeof(link_t));
@@ -206,6 +201,19 @@ void list_push2(link_t** l, int data)
     }
 }
 
+/**
+ * ## Linked list and atomic capture
+ *
+ * The linked list example above uses a critical section to protect
+ * the list push operation.  The version below uses an atomic capture
+ * operation (i.e. an atomic operation that reads out the old value
+ * from some memory and replaces it with a new value).  This atomic
+ * capture approach is finer-grained than the critical section; for
+ * example, we would not have any contention when using this approach
+ * to update two distinct lists concurrently.
+ *
+ */
+
 void list_test2()
 {
     link_t* l = NULL;
@@ -216,7 +224,160 @@ void list_test2()
     free_list(l);
 }
 
+/**
+ * ## Atomic updates
+ *
+ * The mo common use of atomic operations is to update small shared data
+ * items - counters, most often.
+ */
+void count_evens()
+{
+    int counts[2] = {0, 0};
+    #pragma omp parallel for
+    for (int i = 0; i < 100; ++i) {
+        int which_counter = (i % 2);
+        #pragma omp atomic
+        counts[which_counter]++;
+    }
+    printf("For 0 to 99: %d evens, %d odds\n", counts[0], counts[1]);
+}
 
+/**
+ * ## Barrier-based synchronization
+ *
+ * Barrier-based synchronization is particularly useful when we have
+ * computations organized into distinct time steps or phases, with
+ * each step depending on data written in the previous step.  We've seen
+ * a few such computations, including the 1D wave equation.  For this
+ * example, without attempting to make anything go fast, let's try
+ * the Game of Life. 
+ *
+ * We start with some (non-parallel) setup.  We'll use a simple glider
+ * pattern to test things out - this pattern translates by one cell
+ * horizontally and vertically once every four generations.
+ *
+ */
+#define NLIFE 100
+
+typedef struct life_board_t {
+    uint8_t cells[2][NLIFE][NLIFE];
+} life_board_t;
+
+const char* glider =
+    " *\n"
+    "  *\n"
+    "***\n";
+
+void init_life(life_board_t* board, const char* s)
+{
+    memset(board->cells, 0, 2 * NLIFE * NLIFE);
+    for (int i = 1; i < NLIFE-1 && *s != '\0'; ++i) {
+        int live = 0;
+        for (int j = 1; *s && *s != '\n'; ++j, ++s) {
+            if (i < NLIFE-1) {
+                if (*s == ' ')
+                    board->cells[0][i][j] = 0;
+                else if (*s == '*') {
+                    board->cells[0][i][j] = 1;
+                    ++live;
+                }
+            }
+        }
+        if (*s == '\n')
+            ++s;
+    }
+}
+
+void print_life(life_board_t* board, int gen, int nrow, int ncol)
+{
+    for (int i = 1; i <= nrow; ++i) {
+        for (int j = 1; j <= ncol; ++j)
+            printf(board->cells[gen][i][j] ? "*" : " ");
+        printf("\n");
+    }
+}
+
+/**
+ * The actual `run_life` routine updates the board generation by
+ * generation.  At each step, we are only reading from the current
+ * generation, and have independent writes into the board for the next
+ * generation.  Note that the outer loop (over generations) is *not*
+ * parallel: each thread runs all the iterations of this outer loop.
+ * But we do decorate the inner loop next to be parallelized across the
+ * threads, so each thread in the team updates some part of the board.
+ * There is an implicit barrier at the end of a parallel for loop
+ * unless we include the `nowait` clause, so each loop switches generations
+ * in lockstep.
+ *
+ */
+int run_life(life_board_t* board, int ngens)
+{
+    #pragma omp parallel
+    for (int g = 0; g < ngens; ++g) {
+        int current_gen = g%2;
+        int next_gen = (g+1)%2;
+
+        #pragma omp for collapse(2)
+        for (int i = 1; i < NLIFE-1; ++i) {
+            for (int j = 1; j < NLIFE-1; ++j) {
+
+                // Count live neighbors
+                int count = -board->cells[current_gen][i][j];;
+                for (int ii = -1; ii <= 1; ++ii)
+                    for (int jj = -1; jj <= 1; ++jj)
+                        count += board->cells[current_gen][i+ii][j+jj];
+
+                // Update rule
+                if (board->cells[current_gen][i][j] &&
+                    (count == 2 || count == 3))
+                    board->cells[next_gen][i][j] = 1; // Still alive
+                else if (!board->cells[current_gen][i][j] && count == 3)
+                    board->cells[next_gen][i][j] = 1; // Birth
+                else
+                    board->cells[next_gen][i][j] = 0; // Dead
+            }
+        } // Implicit barrier at end of parallel for
+    }
+    return ngens%2;
+}
+
+void glider_test()
+{
+    life_board_t board;
+    init_life(&board, glider);
+    printf("... Gen 0... :\n");
+    print_life(&board, 0, 6, 8);
+    run_life(&board, 12);
+    printf("... Gen 12... :\n");
+    print_life(&board, 0, 6, 8);
+}
+
+/**
+ * ## Task-based list traversal
+ *
+ * This list traversal code goes through a linked list and creates a task
+ * for processing each.
+ */
+void list_traversal_test()
+{
+    link_t* head = NULL;
+    for (int i = 0; i < 10; ++i)
+        list_push2(&head, i);
+
+    #pragma omp parallel
+    {
+        #pragma omp single nowait
+        {
+            printf("Creating tasks from %d\n", omp_get_thread_num());
+            for (link_t* link = head; link; link = link->next) {
+                #pragma omp task firstprivate(link)
+                printf("Process %d on thread %d\n",
+                       link->data, omp_get_thread_num());
+            }
+            printf("Done creating tasks\n");
+         }
+     }
+}
 
 // ldoc off
 int main()
@@ -236,4 +397,13 @@ int main()
 
     printf("\n--- List and atomic --\n");
     list_test2();
+
+    printf("\n--- Atomic counter updates --\n");
+    count_evens();
+
+    printf("\n--- Game of Life --\n");
+    glider_test();
+
+    printf("\n--- List traversal --\n");
+    list_traversal_test();
 }
