@@ -1,8 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
-
 //ldoc on
 /**
  * % OpenMP demos
@@ -16,20 +11,12 @@
  * where the various OpenMP library routines are declared.
  *
  */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
 #include <omp.h>
 
-//ldoc off
-
-void print_array(const char* tag, int* array, int n)
-{
-    printf("%s:", tag);
-    for (int i = 0; i < n; ++i)
-        printf(" %d", array[i]);
-    printf("\n");
-}
-
-
-//ldoc on
 /**
  * ## Hello, world
  * 
@@ -62,11 +49,20 @@ void hello()
  *   the parallel section, not outside.  We use the `lastprivate` variable
  *   declaration to make sure that the `nthreads` variable gets copied out
  *   to the outside world when the parallel region ends.
- * - We use a variable-length array for the output.  This is technically
- *   optional in C11 (it was required in C99), but all the common compilers
- *   support it, including CLang, Intel, and GCC.
+ *
+ * We also use a variable-length array for the output.  This is technically
+ * optional in C11 (it was required in C99), but all the common compilers
+ * support it, including CLang, Intel, and GCC.
  *
  */
+
+void print_array(const char* tag, int* array, int n)
+{
+    printf("%s:", tag);
+    for (int i = 0; i < n; ++i)
+        printf(" %d", array[i]);
+    printf("\n");
+}
 
 void fill_array1()
 {
