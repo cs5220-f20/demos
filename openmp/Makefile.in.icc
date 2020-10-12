@@ -1,0 +1,9 @@
+# C compilers
+CC=icc
+LD=icc
+
+# Compiler and linker flags
+OPTFLAGS= -O3 -march=native
+CFLAGS= -qopenmp
+LDFLAGS= -qopenmp
+LIBS= -lm 

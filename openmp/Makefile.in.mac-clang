@@ -1,0 +1,8 @@
+# C and Fortran compilers
+CC=clang
+LD=clang
+
+# Compiler and linker flags
+OPTFLAGS= -O3 -march=native
+CFLAGS= -Xpreprocessor -fopenmp
+LDFLAGS= -Xpreprocessor -fopenmp -lomp
