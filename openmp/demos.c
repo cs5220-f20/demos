@@ -187,17 +187,6 @@ void list_test()
     free_list(l);
 }
 
-void list_push2(link_t** l, int data)
-{
-    link_t* link = (link_t*) malloc(sizeof(link_t));
-    link->data = data;
-    #pragma omp atomic capture
-    {
-        link->next = *l;
-        *l = link;
-    }
-}
-
 /**
  * ## Linked list and atomic capture
  *
@@ -210,6 +199,17 @@ void list_push2(link_t** l, int data)
  * to update two distinct lists concurrently.
  *
  */
+
+void list_push2(link_t** l, int data)
+{
+    link_t* link = (link_t*) malloc(sizeof(link_t));
+    link->data = data;
+    #pragma omp atomic capture
+    {
+        link->next = *l;
+        *l = link;
+    }
+}
 
 void list_test2()
 {

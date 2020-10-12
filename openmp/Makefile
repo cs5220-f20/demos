@@ -19,5 +19,11 @@ hello4: hello.x
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< 
 
+demos.md: demos.c
+	ldoc demos.c -o demos.md
+
+demos.html: demos.md
+	pandoc demos.md -o demos.html
+
 clean:
 	rm -f $(EXES)
