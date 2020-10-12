@@ -5,7 +5,7 @@
 
 //ldoc on
 /**
- * # OpenMP demos
+ * % OpenMP demos
  *
  * This file has a number of small demos of OpenMP constructs.
  * It must be compiled with the OpenMP flags turned on (see
@@ -65,6 +65,7 @@ void hello()
  * - We use a variable-length array for the output.  This is technically
  *   optional in C11 (it was required in C99), but all the common compilers
  *   support it, including CLang, Intel, and GCC.
+ *
  */
 
 void fill_array1()
@@ -229,6 +230,7 @@ void list_test2()
  *
  * The mo common use of atomic operations is to update small shared data
  * items - counters, most often.
+ *
  */
 void count_evens()
 {
@@ -357,6 +359,7 @@ void glider_test()
  *
  * This list traversal code goes through a linked list and creates a task
  * for processing each.
+ *
  */
 void list_traversal_test()
 {
