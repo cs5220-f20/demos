@@ -1,0 +1,17 @@
+#!/bin/bash
+
+#SBATCH -J mpi-demo
+#SBATCH -o /home/%u/output/mpi-demo_%j.out
+#SBATCH -e /home/%u/output/mpi-demo_%j.err
+#SBATCH --nodes=1
+#SBATCH --ntasks=4
+#SBATCH --tasks-per-node=4
+#SBATCH --cpus-per-task=1
+#SBATCH --get-user-env
+#SBATCH -t 00:10:00
+#SBATCH --mem-per-cpu=1000
+#SBATCH --partition=cs5220
+
+source /etc/profile.d/modules.sh
+module load openmpi-4.0.0
+mpirun -np 4 $HOME/demos/mpi-demo/mpi-demo.x
