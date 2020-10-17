@@ -9,7 +9,7 @@ wave1d.x: driver.o wave1d.o wave1d_lua.o
 	$(CC) $^ -o $@ $(LIBS)
 
 wave_lua.md: wave1d.h wave1d.c wave1d_lua.c
-	ldoc wave1d.h wave1d.c wave1d_lua.c -o wave_demo.md
+	ldoc wave1d.h wave1d.c wave1d_lua.c -o wave_lua.md
 
 %.pdf: %.md
 	pandoc $< -o $@
